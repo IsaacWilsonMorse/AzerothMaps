@@ -1,0 +1,33 @@
+## Interface: 110000
+## Title: AzerothMaps - Map & Friends Search
+## Notes: Adds a search box with dropdown on the World Map. Jump to zones/instances or friends. Optional TomTom waypoint.
+## Author: You
+## Version: 0.2
+## SavedVariables: AzerothMapsDB, AM_DebugLog
+
+core/Init.lua
+core/Config.lua
+util/Debug.lua
+util/coord_utils.lua
+systems/MapIndex.lua
+systems/Friends.lua
+
+# Data (generated)
+# Using new lua data files; exclude taxi data.
+data/lua/areas.lua
+data/lua/pois.lua
+data/lua/dungeons.lua
+data/lua/portals.lua
+data/lua/expansions.lua
+
+# Offline helpers (uses AzerothMapsOffline from above)
+data/Offline.lua
+
+# Pathfinding modules
+Pathfinder.lua
+Navigate.lua
+
+systems/Entrance.lua
+systems/Waypoints.lua
+ui/SearchUI.lua
+commands/Slash.lua
