@@ -12,6 +12,8 @@ local DEFAULTS = {
   useTomTom = true,
   filterPOIs = true,
   filterAreas = true,
+  enableReportButton = false,
+  reports = {},
 }
 
 local function copyDefaults(dst, src)
@@ -23,6 +25,10 @@ end
 -- Apply DB values into runtime flags
 function AM.ApplyConfig()
   _G.AM_DebugLog["Logs"] = {}
+  -- Ensure persistent reports storage exists (do not wipe across restarts)
+  local db = _G.AzerothMapsDB or {}
+  if type(db.reports) ~= "table" then db.reports = {} end
+  _G.AzerothMapsDB = db
   local db = _G.AzerothMapsDB or {}
   AM.debug = not not db.debug
   AM.autoSupertrack = not not db.autoSupertrack
@@ -62,6 +68,10 @@ function AM.ApplyConfig()
     AM._mapsScanned = nil
     AM._dungeonsAdded = nil
     AM._areasAdded = nil
+  end
+  AM.enableReportButton = db.enableReportButton and true or false
+  if AM.searchBox and AM.reportButton then
+    if AM.enableReportButton then AM.reportButton:Show() else AM.reportButton:Hide() end
   end
 end
 
@@ -169,6 +179,7 @@ function AM.CreateOptionsPanel()
   addCB("Filter POIs", "Hide portal, zeppelin, PvP and unused POIs.", "filterPOIs")
   addCB("Center World Map on waypoint", "Zoom and center on the waypoint when placing it.", "flashWorldMapPin")
   addEditBox("Max search results", "Maximum number of search results to show (1-100).", "maxResults")
+  addCB("Show 'Report Broken' button", "Enable a button next to the search bar to report the last selected result as broken.", "enableReportButton")
 
   panel:SetScript("OnShow", refreshPanel)
 

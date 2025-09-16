@@ -127,6 +127,7 @@ end
 
 local function handleVariantClick(rec)
   DBG("variant click: %s", rec and rec.name or "<nil>")
+  AM.lastSelectedRecord = rec
   openMapForRecord(rec)
   if AM.variantDropdown then AM.variantDropdown:Hide() end
   if AM.searchBox then
@@ -210,6 +211,7 @@ local function handleResultClick(rec)
     showVariantMenu(rec)
   else
     DBG("result click: %s (no variants)", rec and rec.name or "<nil>")
+    AM.lastSelectedRecord = rec
     openMapForRecord(rec)
     if AM.searchBox then AM.searchBox:SetText("") end
     if AM.dropdown then AM.dropdown:Hide() end
@@ -412,26 +414,23 @@ local function anchorSearchBox()
   if not parent then return end
   AM.searchBox:SetParent(parent)
   AM.searchBox:ClearAllPoints()
-  local filters = findMapFiltersButton()
-  if filters then
-    AM.searchBox:SetPoint("TOPRIGHT", filters, "BOTTOMRIGHT", 160, -6)
-  else
-    AM.searchBox:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, -44)
-  end
+  -- Always anchor on the left-hand side
+  AM.searchBox:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, -44)
   if AM.dropdown then
     AM.dropdown:SetParent(AM.searchBox)
   end
   if AM.variantDropdown then
     AM.variantDropdown:SetParent(AM.searchBox)
     AM.variantDropdown:ClearAllPoints()
-    AM.variantDropdown:SetPoint("TOPLEFT", AM.searchBox, "TOPRIGHT", 4, -24)
+    -- Place variants dropdown to the right of the search dropdown
+    AM.variantDropdown:SetPoint("TOPLEFT", AM.dropdown, "TOPRIGHT", 8, 0)
   end
   if AM.statusFrame and AM.status then
     AM.statusFrame:ClearAllPoints()
-    AM.statusFrame:SetPoint("TOPRIGHT", AM.searchBox, "BOTTOMRIGHT", 0, -28)
+    AM.statusFrame:SetPoint("TOPLEFT", AM.searchBox, "BOTTOMLEFT", 0, -26)
     AM.statusFrame:SetSize(300, 16)
     AM.status:ClearAllPoints()
-    AM.status:SetPoint("RIGHT", AM.statusFrame, "RIGHT", 0, 0)
+    AM.status:SetPoint("LEFT", AM.statusFrame, "LEFT", 0, 0)
   end
 end
 
@@ -460,7 +459,10 @@ local function createSearchUI()
     end
   end)
   box:SetScript("OnEnterPressed", function(self)
-    if AM.results[1] then openMapForRecord(AM.results[1]) end
+    if AM.results[1] then
+      AM.lastSelectedRecord = AM.results[1]
+      openMapForRecord(AM.results[1])
+    end
     self:SetText("")
     self:ClearFocus()
     AM.dropdown:Hide()
@@ -469,7 +471,41 @@ local function createSearchUI()
   AM.dropdown = createDropdown(box, handleResultClick, true)
   AM.variantDropdown = createDropdown(box, handleVariantClick, false)
   AM.variantDropdown:ClearAllPoints()
-  AM.variantDropdown:SetPoint("TOPLEFT", box, "TOPRIGHT", 4, 0)
+  -- Place variants dropdown to the right of the search dropdown
+  AM.variantDropdown:SetPoint("TOPLEFT", AM.dropdown, "TOPRIGHT", 8, 0)
+
+  -- Report Broken button (configurable)
+  local reportBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+  reportBtn:SetText("Report")
+  reportBtn:SetSize(72, 20)
+  reportBtn:SetFrameStrata("DIALOG")
+  reportBtn:SetFrameLevel(box:GetFrameLevel() + 1)
+  reportBtn:SetPoint("LEFT", box, "RIGHT", 6, 0)
+  reportBtn:SetScript("OnClick", function()
+    local rec = AM.lastSelectedRecord
+    if not rec then
+      print("|cff33ff99AzerothMaps|r: No selection to report. Please pick a result first.")
+      return
+    end
+    local mapID = rec.mapID or rec.map_id or 0
+    local label = mapLabel(rec)
+    local name = rec.name or label or "<unknown>"
+    local right = label ~= "" and label or (rec.areaName or rec.area or "")
+    local parts = {}
+    parts[#parts+1] = string.format("ver=%s", tostring(AM.version or "unknown"))
+    parts[#parts+1] = string.format("name=%s", tostring(name))
+    if mapID and mapID ~= 0 then parts[#parts+1] = string.format("mapID=%s", tostring(mapID)) end
+    if right ~= "" then parts[#parts+1] = string.format("label=%s", tostring(right)) end
+    if rec.type then parts[#parts+1] = string.format("type=%s", tostring(rec.type)) end
+    if rec.instance_type then parts[#parts+1] = string.format("inst=%s", tostring(rec.instance_type)) end
+    local payload = table.concat(parts, ", ")
+    _G.AzerothMapsDB = _G.AzerothMapsDB or {}
+    _G.AzerothMapsDB.reports = _G.AzerothMapsDB.reports or {}
+    table.insert(_G.AzerothMapsDB.reports, string.format("[%s] %s", date("%H:%M:%S"), payload))
+    print(string.format("|cff33ff99AzerothMaps|r: Reported '%s' as broken. Saved to SavedVariables: AzerothMaps.lua (WTF/Account/<YourAccount>/SavedVariables).", tostring(name)))
+  end)
+  AM.reportButton = reportBtn
+  if not AM.enableReportButton then reportBtn:Hide() end
   local statusFrame = CreateFrame("Frame", nil, parent)
   statusFrame:SetFrameStrata("DIALOG")
   statusFrame:SetFrameLevel(box:GetFrameLevel() + 1)

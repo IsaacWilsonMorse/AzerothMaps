@@ -13,6 +13,19 @@ AM.results = {}
 AM.friendsLoaded = false
 AM_DebugLog = {}
 
+-- Discover addon version from metadata
+local function _GetAddonVersion()
+  local v
+  if C_AddOns and C_AddOns.GetAddOnMetadata then
+    v = C_AddOns.GetAddOnMetadata(AZEROTH_MAPS, "Version")
+  elseif GetAddOnMetadata then
+    v = GetAddOnMetadata(AZEROTH_MAPS, "Version")
+  end
+  if not v or v == "" then v = "unknown" end
+  return v
+end
+AM.version = _GetAddonVersion()
+
 local function DBG(fmt, ...)
   if not AM.debug then return end
   local msg = string.format(fmt, ...)
