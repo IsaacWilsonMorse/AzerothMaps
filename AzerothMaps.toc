@@ -2,7 +2,7 @@
 ## Title: AzerothMaps - Map & Friends Search
 ## Notes: Adds a search box with dropdown on the World Map. Jump to zones/instances or friends. Optional TomTom waypoint.
 ## Author: You
-## Version: 0.3
+## Version: 0.4
 ## SavedVariables: AzerothMapsDB, AM_DebugLog
 
 core/Init.lua
