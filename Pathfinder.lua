@@ -28,9 +28,10 @@ local function euclid(a, b)
 end
 
 local function resolveMapID(rec)
-  -- Prefer the uiMapID when available; fall back to any explicit map_id.
+  -- Prefer the uiMapID when available; fall back to any explicit mapID/map_id.
   if not rec then return nil end
   if rec.uimap then return rec.uimap end
+  if rec.mapID then return rec.mapID end
   if rec.map_id then return rec.map_id end
   return nil
 end
@@ -59,13 +60,13 @@ function Pathfinder.BuildGraph(Portals)
        and src and fm
        and dst and tm then
       local fx, fy = 0.5, 0.5
-      if AM.WorldToMapXY and src.map_id and src.wx and src.wy then
-        local x, y = AM.WorldToMapXY(src.map_id, src.wx, src.wy, src.uimap or fm)
+      if AM.WorldToMapXY and (src.map_id or src.mapID) and src.wx and src.wy then
+        local x, y = AM.WorldToMapXY(src.map_id or src.mapID, src.wx, src.wy, src.uimap or fm)
         if x and y then fx, fy = x, y end
       end
       local tx, ty = 0.5, 0.5
-      if AM.WorldToMapXY and dst.map_id and dst.wx and dst.wy then
-        local x, y = AM.WorldToMapXY(dst.map_id, dst.wx, dst.wy, dst.uimap or tm)
+      if AM.WorldToMapXY and (dst.map_id or dst.mapID) and dst.wx and dst.wy then
+        local x, y = AM.WorldToMapXY(dst.map_id or dst.mapID, dst.wx, dst.wy, dst.uimap or tm)
         if x and y then tx, ty = x, y end
       end
       local fk = nodeKey(fm, fx, fy)

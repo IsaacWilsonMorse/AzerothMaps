@@ -52,15 +52,22 @@ local function preload(mapID)
   end
 end
 
+local function isAreaExcluded(name)
+  local n = (name or ""):lower()
+  if n:sub(1, 9) == "portal to" or n:sub(1, 11) == "zeppelin to" then return true end
+  return n:find("unused", 1, true) or n:find("arena", 1, true) or n:find("pvp", 1, true)
+end
+
 local function buildMapIndex()
   AM.mapIndex = AM.mapIndex or {}
+  local filter = AM.filterAreas ~= false
   -- 1) Build from live C_Map so we pick up everything available in the client.
   if not AM._mapsScanned then
     local ids = C_Map.GetMapIDs and C_Map.GetMapIDs()
     if type(ids) == "table" then
       for _, id in ipairs(ids) do
         local info = C_Map.GetMapInfo(id)
-        if info and info.name and allowedTypes[info.mapType] then
+        if info and info.name and allowedTypes[info.mapType] and not (filter and isAreaExcluded(info.name)) then
           local key = info.name:lower()
           local existing = AM.mapIndex[key]
           local exp = expansionForMap(id)
@@ -77,7 +84,7 @@ local function buildMapIndex()
       while true do
         local info = C_Map.GetMapInfo(id)
         if not info then break end
-        if info.name and allowedTypes[info.mapType] then
+        if info.name and allowedTypes[info.mapType] and not (filter and isAreaExcluded(info.name)) then
           local key = info.name:lower()
           local existing = AM.mapIndex[key]
           local exp = expansionForMap(id)
@@ -100,25 +107,32 @@ local function buildMapIndex()
     for id, rec in pairs(D) do
       local name = rec and rec.name
       if name and type(name) == "string" then
-        local key = name:lower()
-        local existing = AM.mapIndex[key]
-        if existing then
-          existing.variants = existing.variants or {}
-          local dup = {}
-          for k,v in pairs(rec) do dup[k]=v end
-          dup.mapID = id
-          dup.name = name
-          dup.expansion_id = dup.expansion_id or expansionForMap(id)
-          table.insert(existing.variants, dup)
-        else
-          local newRec = {}
-          for k,v in pairs(rec) do newRec[k]=v end
-          newRec.mapID = id
-          newRec.name = name
-          newRec.type = "map"
-          newRec.expansion_id = newRec.expansion_id or expansionForMap(id)
-          AM.mapIndex[key] = newRec
-          added = added + 1
+        local inst = rec.instance_type or rec.instanceType
+        if not (filter and (isAreaExcluded(name) or inst == "pvp" or inst == "arena")) then
+          local key = name:lower()
+          local existing = AM.mapIndex[key]
+          local ui = rec.mapID or rec.map_id
+          local exp = expansionForMap(ui or id)
+          if existing then
+            existing.variants = existing.variants or {}
+            local dup = {}
+            for k, v in pairs(rec) do dup[k] = v end
+            dup.mapID = ui
+            dup.map_db2_id = rec.map_db2_id or id
+            dup.name = name
+            dup.expansion_id = dup.expansion_id or exp
+            table.insert(existing.variants, dup)
+          else
+            local newRec = {}
+            for k, v in pairs(rec) do newRec[k] = v end
+            newRec.mapID = ui
+            newRec.map_db2_id = rec.map_db2_id or id
+            newRec.name = name
+            newRec.type = "map"
+            newRec.expansion_id = newRec.expansion_id or exp
+            AM.mapIndex[key] = newRec
+            added = added + 1
+          end
         end
       end
     end
@@ -132,7 +146,7 @@ local function buildMapIndex()
     for aid, rec in pairs(A) do
       local nm = rec and rec.name
       local mid = rec and (rec.map_id or rec.mapID)
-      if nm and mid and type(nm) == "string" and type(mid) == "number" then
+      if nm and mid and type(nm) == "string" and type(mid) == "number" and not (filter and isAreaExcluded(nm)) then
         local key = nm:lower()
         local x, y
         if rec.continent and rec.wx and rec.wy and AM.WorldToMapXY then
@@ -154,6 +168,14 @@ local function buildMapIndex()
   DBG("Built map index with %d names", (function() local c=0 for _ in pairs(AM.mapIndex) do c=c+1 end return c end)())
 end
 
+local function isPoiExcluded(name, desc)
+  local n = (name or ""):lower()
+  if n:sub(1, 9) == "portal to" or n:sub(1, 11) == "zeppelin to" then return true end
+  local text = n
+  if desc and desc ~= "" then text = text .. " " .. desc:lower() end
+  return text:find("unused", 1, true) or text:find("arena", 1, true) or text:find("pvp", 1, true)
+end
+
 local function buildPoiIndex()
   if AM._poiList then return end
   local P = _G.POIs and _G.POIs.recs
@@ -163,59 +185,63 @@ local function buildPoiIndex()
   AM._poiList = {}
   AM._poiByName = {}
   local count = 0
+  local filter = AM.filterPOIs ~= false
   for id, rec in pairs(P) do
     local name = rec and rec.name
     if name and type(name) == "string" and name ~= "" then
-      local nml = name:lower()
-      local mapDup = AM.mapIndex and AM.mapIndex[nml]
-      if mapDup then
-        -- record duplicate POI names without removing existing map entries
-        AM._poiDuplicates = AM._poiDuplicates or {}
-        AM._poiDuplicates[nml] = true
-      end
-      local areaName
-      if rec.area and A[rec.area] and A[rec.area].name then
-        areaName = A[rec.area].name
-      end
-      local mapID = rec.map_id or rec.mapID
-      local x, y
-      if rec.continent and rec.wx and rec.wy and mapID and AM.WorldToMapXY then
-        x, y = AM.WorldToMapXY(rec.continent, rec.wx, rec.wy, mapID)
-      end
-      if mapID and not mapDup then
-        local info = C_Map.GetMapInfo(mapID)
-        if info and info.name then
-          AM.mapIndex[info.name:lower()] = { mapID = mapID, name = info.name, type = "map", expansion_id = rec.expansion_id, timeline = rec.timeline, phase_id = rec.phase_id, phase_group = rec.phase_group }
-          mapDup = AM.mapIndex[info.name:lower()]
+      local desc = rec.desc
+      if not (filter and isPoiExcluded(name, desc)) then
+        local nml = name:lower()
+        local mapDup = AM.mapIndex and AM.mapIndex[nml]
+        if mapDup then
+          -- record duplicate POI names without removing existing map entries
+          AM._poiDuplicates = AM._poiDuplicates or {}
+          AM._poiDuplicates[nml] = true
         end
+        local areaName
+        if rec.area and A[rec.area] and A[rec.area].name then
+          areaName = A[rec.area].name
+        end
+        local mapID = rec.map_id or rec.mapID
+        local x, y
+        if rec.continent and rec.wx and rec.wy and mapID and AM.WorldToMapXY then
+          x, y = AM.WorldToMapXY(rec.continent, rec.wx, rec.wy, mapID)
+        end
+        if mapID and not mapDup then
+          local info = C_Map.GetMapInfo(mapID)
+          if info and info.name then
+            AM.mapIndex[info.name:lower()] = { mapID = mapID, name = info.name, type = "map", expansion_id = rec.expansion_id, timeline = rec.timeline, phase_id = rec.phase_id, phase_group = rec.phase_group }
+            mapDup = AM.mapIndex[info.name:lower()]
+          end
+        end
+        local poi = {
+          type = "poi",
+          poiID = id,
+          name = name,
+          name_l = nml,
+          areaID = rec.area,
+          areaName = areaName,
+          continent = rec.continent,
+          mapID = mapID,
+          x = x,
+          y = y,
+          wx = rec.wx,
+          wy = rec.wy,
+          expansion_id = rec.expansion_id,
+          timeline = rec.timeline,
+          phase_id = rec.phase_id,
+          phase_group = rec.phase_group,
+          -- mapID/x/y resolved lazily when opening the record
+        }
+        table.insert(AM._poiList, poi)
+        AM._poiByName[nml] = AM._poiByName[nml] or {}
+        table.insert(AM._poiByName[nml], poi)
+        if mapDup or #AM._poiByName[nml] > 1 then
+          AM._poiDuplicates = AM._poiDuplicates or {}
+          AM._poiDuplicates[nml] = true
+        end
+        count = count + 1
       end
-      local poi = {
-        type = "poi",
-        poiID = id,
-        name = name,
-        name_l = nml,
-        areaID = rec.area,
-        areaName = areaName,
-        continent = rec.continent,
-        mapID = mapID,
-        x = x,
-        y = y,
-        wx = rec.wx,
-        wy = rec.wy,
-        expansion_id = rec.expansion_id,
-        timeline = rec.timeline,
-        phase_id = rec.phase_id,
-        phase_group = rec.phase_group,
-        -- mapID/x/y resolved lazily when opening the record
-      }
-      table.insert(AM._poiList, poi)
-      AM._poiByName[nml] = AM._poiByName[nml] or {}
-      table.insert(AM._poiByName[nml], poi)
-      if mapDup or #AM._poiByName[nml] > 1 then
-        AM._poiDuplicates = AM._poiDuplicates or {}
-        AM._poiDuplicates[nml] = true
-      end
-      count = count + 1
     end
   end
   DBG("Built POI index with %d entries", count)
@@ -252,19 +278,28 @@ end
 
 -- Attempt to guess a mapID from world coordinates.
 -- Looks for the closest Area entry on the same continent and returns
--- its map_id along with the area's name and ID.
+-- its mapID along with the area's name and ID.
 local function findMapIDForCoords(continent, wx, wy)
   local Areas = _G.Areas and _G.Areas.recs
   if not (Areas and continent and wx and wy) then return nil end
   local bestDistSq, bestMapID, bestName, bestAID
+  local bestZoneDistSq, bestZoneMapID, bestZoneName, bestZoneAID
   for aid, ar in pairs(Areas) do
-    if ar.continent == continent and ar.map_id and ar.wx and ar.wy then
+    local amap = ar.map_id or ar.mapID
+    if ar.continent == continent and amap and ar.wx and ar.wy then
       local dx, dy = ar.wx - wx, ar.wy - wy
       local d2 = dx*dx + dy*dy
       if not bestDistSq or d2 < bestDistSq then
-        bestDistSq, bestMapID, bestName, bestAID = d2, ar.map_id, ar.name, aid
+        bestDistSq, bestMapID, bestName, bestAID = d2, amap, ar.name, aid
+      end
+      local isZone = (ar.type == "zone") or (ar.type_id and tonumber(ar.type_id) and tonumber(ar.type_id) < 4)
+      if isZone and (not bestZoneDistSq or d2 < bestZoneDistSq) then
+        bestZoneDistSq, bestZoneMapID, bestZoneName, bestZoneAID = d2, amap, ar.name, aid
       end
     end
+  end
+  if bestZoneMapID then
+    return bestZoneMapID, bestZoneName, bestZoneAID
   end
   return bestMapID, bestName, bestAID
 end
@@ -367,9 +402,10 @@ local function searchMaps(q)
   end
   -- POI matches (appended after maps)
   if AM._poiList then
+    local hasExact = AM._poiByName and AM._poiByName[q]
     for _, p in ipairs(AM._poiList) do
       local n = p.name_l or (p.name and p.name:lower())
-      if n and n:find(q, 1, true) then
+      if n and (n == q or (not hasExact and n:find(q, 1, true))) then
         if p.mapID then
           local info = C_Map.GetMapInfo(p.mapID)
           if info and info.name then
@@ -399,7 +435,7 @@ local function searchMaps(q)
   if Areas then
     local function mapIdForAreaRec(ar)
       if not ar then return nil end
-      if ar.map_id then return ar.map_id end
+    if ar.map_id or ar.mapID then return ar.map_id or ar.mapID end
       -- Try to resolve via existing mapIndex by walking up parents
       local seen = {}
       local cur = ar
@@ -419,7 +455,7 @@ local function searchMaps(q)
     for aid, ar in pairs(Areas) do
       local nm = ar and ar.name
       local nml = nm and nm:lower()
-      if nml and nml:find(q, 1, true) then
+      if nml and nml:find(q, 1, true) and not (AM.filterAreas ~= false and isAreaExcluded(nm)) then
         local mid = mapIdForAreaRec(ar)
         if mid then
           local x, y
@@ -458,7 +494,14 @@ local function searchMaps(q)
     local primary, variants = nil, {}
     for _, expKey in ipairs(expGroups._order) do
       local best, cand = canonicalize(expGroups[expKey])
-      if cand and #cand > 0 then best.candidates = cand end
+      if cand and #cand > 0 then
+        if (best.type == "poi" and AM.filterPOIs == false) or (best.type ~= "poi" and AM.filterAreas == false) then
+          best.variants = best.variants or {}
+          for _, c in ipairs(cand) do best.variants[#best.variants+1] = c end
+        else
+          best.candidates = cand
+        end
+      end
       if not primary then
         primary = best
       else

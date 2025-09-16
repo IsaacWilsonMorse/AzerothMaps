@@ -116,9 +116,10 @@ local function openMapForFriend(rec)
     end
   end
   -- Fallback: use rec.mapID and rec.area if available
-  if rec.mapID then
-    DBG("|cff33ff99AzerothMaps|r: Fallback to rec.mapID for "..rec.name.." (mapID="..tostring(rec.mapID)..")")
-    openMap(rec.mapID)
+  if rec.mapID or rec.map_id then
+    local mid = rec.mapID or rec.map_id
+    DBG("|cff33ff99AzerothMaps|r: Fallback to rec.mapID for "..rec.name.." (mapID="..tostring(mid)..")")
+    openMap(mid)
     return
   elseif rec.area then
     DBG("|cff33ff99AzerothMaps|r: Fallback to rec.area for "..rec.name.." (area="..tostring(rec.area)..")")
@@ -136,14 +137,35 @@ local function openMapForFriend(rec)
 end
 
 local function openMapForRecordOnce(rec)
+
+  -- Debug print rec data
+  DBG("openMapForRecordOnce: %s", tostring(rec.name or "nil"))
+  for k, v in pairs(rec) do
+    if k ~= "candidates" and k ~= "variants" then
+      DBG("  %s = %s", tostring(k), tostring(v))
+    end
+  end
+
   DBG("|cff33ff99AzerothMaps|r: Opening map for record: "..(rec.name or "nil").." (type "..tostring(rec.type)..")")
   if rec.type == "bnet" then
     openMapForFriend(rec)
     return true
   end
   if rec.type == "poi" then
+    -- If this POI refers to a known dungeon/delve by name, route via entrance solver
+    local name_l = (rec.name or ""):lower()
+    local drec
+    if _G.Dungeons and _G.Dungeons.recs then
+      if not AM._dungeonByName then
+        AM._dungeonByName = {}
+        for _, dre in pairs(_G.Dungeons.recs) do
+          if dre and dre.name then AM._dungeonByName[dre.name:lower()] = dre end
+        end
+      end
+      drec = AM._dungeonByName[name_l]
+    end
     -- Resolve mapID lazily (prefer the area name if available)
-    local mapID = rec.mapID
+    local mapID = rec.mapID or rec.map_id
     if not mapID then
       local areaName = rec.areaName
       if not areaName and _G.Areas and _G.Areas.recs and rec.areaID then
@@ -159,13 +181,52 @@ local function openMapForRecordOnce(rec)
       end
       rec.mapID = mapID
     end
+    -- If the resolved map is instance-like OR name matches a dungeon, prefer entrance resolution
+    if (mapID and AM.isInstanceLike and AM.isInstanceLike(mapID)) or drec then
+      local instID = (drec and (drec.mapID or drec.map_id)) or mapID
+      if drec then DBG("POI matched Dungeons: using instance %s(%d) for %s", drec.name or "?", tonumber(instID) or -1, rec.name or "?") end
+      local parentMapID, ex, ey = AM.findEntranceForInstance(instID, rec.name)
+      if parentMapID and ex and ey then
+        openMap(parentMapID)
+        addTomTomWaypoint(parentMapID, ex, ey, rec.name, true)
+        return true
+      end
+      -- fallback: still open the instance map with center pin
+      openMap(instID)
+      addTomTomWaypoint(instID, 0.5, 0.5, rec.name, true)
+      return true
+    end
     if not mapID then
       DBG("|cff33ff99AzerothMaps|r: Could not resolve a map for POI "..tostring(rec.name))
       return false
     end
     local x, y
+    local targetMapID = mapID
+    local info = C_Map.GetMapInfo and C_Map.GetMapInfo(mapID)
+    if info and info.mapType == Enum.UIMapType.Micro and info.parentMapID and info.parentMapID > 0 then
+      targetMapID = info.parentMapID
+    end
     if AM.WorldToMapXY and rec.continent and rec.wx and rec.wy then
-      x, y = AM.WorldToMapXY(rec.continent, rec.wx, rec.wy, mapID)
+      x, y = AM.WorldToMapXY(rec.continent, rec.wx, rec.wy, targetMapID)
+      -- If projection failed or out of bounds, try zone ancestry targets
+      if not (x and y and x >= 0 and x <= 1 and y >= 0 and y <= 1) then
+        local tried = {}
+        local list = AM.getZoneAncestry and AM.getZoneAncestry(targetMapID) or {}
+        for _, cand in ipairs(list) do
+          if not tried[cand] then
+            tried[cand] = true
+            local info = C_Map.GetMapInfo and C_Map.GetMapInfo(cand)
+            if info and info.mapType == Enum.UIMapType.Zone then
+              local ax, ay = AM.WorldToMapXY(rec.continent, rec.wx, rec.wy, cand)
+              if ax and ay and ax >= 0 and ax <= 1 and ay >= 0 and ay <= 1 then
+                x, y = ax, ay
+                targetMapID = cand
+                break
+              end
+            end
+          end
+        end
+      end
       rec.x, rec.y = x, y
     else
       x, y = rec.x, rec.y
@@ -173,11 +234,11 @@ local function openMapForRecordOnce(rec)
     if not x or not y then
       x, y = 0.5, 0.5
     end
-    openMap(mapID)
-    addTomTomWaypoint(mapID, x, y, rec.name, true)
+    openMap(targetMapID)
+    addTomTomWaypoint(targetMapID, x, y, rec.name, true)
     return true
   end
-  local mapID = rec.mapID
+  local mapID = rec.mapID or rec.map_id
   local info = mapID and C_Map.GetMapInfo and C_Map.GetMapInfo(mapID) or nil
   DBG("openMapForRecord: map %s(%d), instanceLike=%s, hasInfo=%s", rec.name, mapID, tostring(AM.isInstanceLike(mapID)), tostring(info ~= nil))
   if not info or (AM.isInstanceLike(mapID) and not AM.preferInstanceMap) then

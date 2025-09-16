@@ -10,6 +10,8 @@ local DEFAULTS = {
   maxResults = 25,
   preferInstanceMap = false,
   useTomTom = true,
+  filterPOIs = true,
+  filterAreas = true,
 }
 
 local function copyDefaults(dst, src)
@@ -39,6 +41,28 @@ function AM.ApplyConfig()
     AM._areasAdded = nil
   end
   AM.useTomTom = not not db.useTomTom
+  local oldArea = AM.filterAreas
+  AM.filterAreas = db.filterAreas ~= false
+  if oldArea ~= AM.filterAreas then
+    AM._poiList = nil
+    AM._poiByName = nil
+    AM._poiDuplicates = nil
+    AM.mapIndex = nil
+    AM._mapsScanned = nil
+    AM._dungeonsAdded = nil
+    AM._areasAdded = nil
+  end
+  local oldFilter = AM.filterPOIs
+  AM.filterPOIs = db.filterPOIs ~= false
+  if oldFilter ~= AM.filterPOIs then
+    AM._poiList = nil
+    AM._poiByName = nil
+    AM._poiDuplicates = nil
+    AM.mapIndex = nil
+    AM._mapsScanned = nil
+    AM._dungeonsAdded = nil
+    AM._areasAdded = nil
+  end
 end
 
 -- Options panel (works in both new and legacy Settings UIs)
@@ -141,6 +165,8 @@ function AM.CreateOptionsPanel()
   addCB("Use TomTom if available", "Set TomTom waypoints and arrow when navigating.", "useTomTom")
   addCB("Auto-navigate", "Pathfind and set waypoints when selecting a result.", "autoNavigate")
   addCB("Prefer instance map", "Use in-instance coordinates when available. Disable to favor dungeon entrances.", "preferInstanceMap")
+  addCB("Filter areas", "Hide unused, arena and PvP areas and dungeons.", "filterAreas")
+  addCB("Filter POIs", "Hide portal, zeppelin, PvP and unused POIs.", "filterPOIs")
   addCB("Center World Map on waypoint", "Zoom and center on the waypoint when placing it.", "flashWorldMapPin")
   addEditBox("Max search results", "Maximum number of search results to show (1-100).", "maxResults")
 

@@ -138,10 +138,17 @@ end
 local function showVariantMenu(rec)
   if not rec then return end
   DBG("showVariantMenu: %s with %d variant(s)", rec.name or "<nil>", #(rec.variants or {}))
+  -- Preserve the canonical primary record as option 1; sort the rest.
+  local primary = cloneRecord(rec)
   local list, seen = {}, {}
   local function add(r)
     if not r then return end
     local copy = cloneRecord(r)
+    local unfiltered = (copy.type == "poi" and AM.filterPOIs == false) or (copy.type ~= "poi" and AM.filterAreas == false)
+    if unfiltered then
+      table.insert(list, copy)
+      return
+    end
     local ids = {}
     local expKey = expansionKey(copy)
     if copy.type ~= "poi" and not copy.poiID then
@@ -170,7 +177,7 @@ local function showVariantMenu(rec)
       table.insert(list, copy)
     end
   end
-  add(rec)
+  -- Collect only variants (the primary stays pinned at index 1)
   for _, v in ipairs(rec.variants or {}) do add(v) end
   -- Sort variants by expansion id (ascending), then by label as a tiebreaker
   table.sort(list, function(b, a)
@@ -181,16 +188,18 @@ local function showVariantMenu(rec)
     local lb = mapLabel and mapLabel(b) or (b.display or b.name or "")
     return tostring(la) < tostring(lb)
   end)
-
-  for i, r in ipairs(list) do
+  -- Prepend primary and label entries
+  local full = { primary }
+  for i, r in ipairs(list) do full[#full+1] = r end
+  for i, r in ipairs(full) do
     local d = variantLabel(r)
     r.display = (d ~= "" and d) or (i == 1 and "Default" or "Variant")
   end
-  AM.results = list
+  AM.results = full
   AM.suppressSearch = true
   if AM.variantDropdown then
-    DBG("showVariantMenu: displaying %d option(s)", #list)
-    AM.variantDropdown:ShowResults(list)
+    DBG("showVariantMenu: displaying %d option(s)", #full)
+    AM.variantDropdown:ShowResults(full)
   end
   AM.suppressSearch = false
 end
